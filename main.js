@@ -213,6 +213,7 @@ const LN = [[0, 0, 0, 16, 2, 16], [0, 14, 0, 16, 16, 16], [0, 0, 0, 16, 16, 2], 
 const bitsS = (v, t) => { const l = t.filter((_, i) => v >> i & 1); return (l.length ? l : [t[0]]).map(b => bx(...b)); };
 const FA = [[7, 6, 0, 9, 9, 6], [7, 12, 0, 9, 15, 6], [7, 6, 10, 9, 9, 16], [7, 12, 10, 9, 15, 16], [0, 6, 7, 6, 9, 9], [0, 12, 7, 6, 15, 9], [10, 6, 7, 16, 9, 9], [10, 12, 7, 16, 15, 9]], PA = [[7, 0, 0, 9, 16, 7], [7, 0, 9, 9, 16, 16], [0, 0, 7, 7, 16, 9], [9, 0, 7, 16, 16, 9]];
 const WA = [[[5, 0, 0, 11, 14, 8], [5, 0, 0, 11, 16, 8]], [[5, 0, 8, 11, 14, 16], [5, 0, 8, 11, 16, 16]], [[0, 0, 5, 8, 14, 11], [0, 0, 5, 8, 16, 11]], [[8, 0, 5, 16, 14, 11], [8, 0, 5, 16, 16, 11]]];
+const FACE_OFFSETS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const DX = [0, 0, -1, 1], DZ = [-1, 1, 0, 0], CS = { 1: [], 2: [] }, FQ = [5, 4, 1, 0], CK = [];
 for (let m = 0; m < 16; m++) {
   const f = [bx(6, 0, 6, 10, 16, 10)], p = [bx(7, 0, 7, 9, 16, 9)];
@@ -495,7 +496,7 @@ function meshSub(scx, sy, scz, b) {
         for (let f = 0; f < 6; f++) {
           const ax = f >> 1; if (msk >> f & 1) continue;
           if (f & 1 ? B[ax] == 0 : B[3 + ax] == 1) {
-            const d = D[f], nx = x + d[0], ny = y + d[1], nz = zz + d[2]; let n;
+            const d = FACE_OFFSETS[f], nx = x + d[0], ny = y + d[1], nz = zz + d[2]; let n;
             if (nx >= 0 && nx < 16 && ny >= 0 && ny < 16 && nz >= 0 && nz < 16) n = b[nx * 256 + nz * 16 + ny]; else n = getB(scx * 16 + nx, sy * 16 + ny, scz * 16 + nz);
             if (n > 0 && (kind[n] == 1 || (cfa[a] == 2 && cfa[n] == 2))) continue;
           }
@@ -505,7 +506,7 @@ function meshSub(scx, sy, scz, b) {
       continue;
     }
     for (let f = 0; f < 6; f++) {
-      const d = D[f], nx = x + d[0], ny = y + d[1], nz = zz + d[2]; let n;
+      const d = FACE_OFFSETS[f], nx = x + d[0], ny = y + d[1], nz = zz + d[2]; let n;
       if (nx >= 0 && nx < 16 && ny >= 0 && ny < 16 && nz >= 0 && nz < 16) n = b[nx * 256 + nz * 16 + ny]; else n = getB(scx * 16 + nx, sy * 16 + ny, scz * 16 + nz);
       if (n < 0) continue; if (n && (kind[n] == 1 || (ka == 2 && (kind[n] == 2 || wl[n])) || n == a)) continue;
       emit(O, wx, wy, wz, c, f, 0);
