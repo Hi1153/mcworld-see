@@ -101,11 +101,6 @@ dropzone.addEventListener('drop', (event) => {
   chooseFile(event.dataTransfer?.files?.[0]);
 });
 
-// ひろのHTMLの「3D表示を開始」ボタンから、友達の既存読み込み処理を呼び出す。
-loadButton.addEventListener('click', () => {
-  window.startWorldViewer(fileInput.files?.[0] || selectedFile);
-});
-
 $('resetView').addEventListener('click', resetCamera);
 
 $('fullscreen').addEventListener('click', () => {
@@ -1256,3 +1251,10 @@ function updateLazyChunkRendering(time) {
 }
 
 document.documentElement.dataset.viewerReady = 'true';
+
+// Connect the existing page's start button to the original viewer entry point.
+if (loadButton) {
+  loadButton.addEventListener('click', () => {
+    window.startWorldViewer(fileInput?.files?.[0] || selectedFile);
+  });
+}
