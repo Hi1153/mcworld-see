@@ -378,7 +378,7 @@
                                                         function maybe(){if(!W)return;const R=+$('dr').value,t=Math.max(2,Math.min(R>>2,6)),cx=Math.floor((T[0]+W.ox)/16),cz=Math.floor((T[2]+W.oz)/16),cy=Math.floor(T[1]/16);
                                                         if(Math.abs(cx-bc[0])>t||Math.abs(cz-bc[1])>t||Math.abs(cy-bc[2])>t)build()}
                                                         const tick=()=>new Promise(r=>setTimeout(r));
-                                                        const msg=t=>$('msg').textContent=t||'';
+                                                        const msg=t=>{const text=t||'';$('msg').textContent=text;const status=document.getElementById('status');if(status){status.textContent=text;status.className='status '+(text.startsWith('エラー:')?'error':text==='読み込み中…'||text.startsWith('解析中')||text==='ワールドを準備中…'?'':'success');}const loading=document.getElementById('loading');if(loading){loading.classList.toggle('hidden',!text||text.startsWith('エラー:'));const title=document.getElementById('loadingTitle');if(title)title.textContent=text;} };
                                                         addEventListener('error',e=>{const m=$('msg');if(m)m.textContent='エラー: '+(e.message||'不明なエラー')});
                                                         let file=null,scene=null;
                                                         /* ---- lazy zip reader: only the central directory is read up front, entries are read with File.slice on demand (zip64 aware) ---- */
@@ -552,5 +552,5 @@
                                                         addEventListener('dragover',e=>{e.preventDefault();$('drop').classList.add('on')});
                                                         addEventListener('dragleave',()=>$('drop').classList.remove('on'));
                                                         addEventListener('drop',e=>{e.preventDefault();$('drop').classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0])});
-;window.startWorldViewer = async function(file){ if(!file) throw new Error("ワールドファイルがありません"); await load(file); };
+;window.startWorldViewer = async function(file){ if(!file) throw new Error("ワールドファイルがありません"); const b=document.getElementById('loadButton'); try { await load(file); const st=document.getElementById('status'); if(st && !st.textContent.startsWith('エラー:')) { st.textContent='ワールド解析は完了しました。3D描画を確認してください。'; st.className='status success'; } } catch(e) { const st=document.getElementById('status'); if(st){st.textContent='読み込みエラー: '+(e&&e.message||e);st.className='status error';} throw e; } finally { if(b){b.disabled=false;b.textContent='3D描画 →';} } };
 })();
