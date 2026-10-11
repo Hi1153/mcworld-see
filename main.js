@@ -101,6 +101,8 @@ dropzone.addEventListener('drop', (event) => {
   chooseFile(event.dataTransfer?.files?.[0]);
 });
 
+loadButton.addEventListener('click', () => window.startWorldViewer(fileInput.files?.[0] || selectedFile));
+
 $('resetView').addEventListener('click', resetCamera);
 
 $('fullscreen').addEventListener('click', () => {
@@ -1228,11 +1230,12 @@ function updateLazyChunkRendering(time) {
     if (geometry) {
       const mesh = new THREE.Mesh(geometry, surfaceMaterial);
       mesh.position.set(
-        chunk.cx * 16 - lazyChunkCenter.x,
-        chunk.cy * 16 - lazyChunkCenter.y,
-        chunk.cz * 16 - lazyChunkCenter.z
+        (chunk.cx * 16 - lazyChunkCenter.x) * 0.5,
+        (chunk.cy * 16 - lazyChunkCenter.y) * 0.5,
+        (chunk.cz * 16 - lazyChunkCenter.z) * 0.5
       );
-      mesh.scale.setScalar(0.5);
+      // Near geometry uses doubled local coordinates; far proxies are already half-scaled.
+      mesh.scale.setScalar(lod === 'far' ? 1 : 0.5);
       mesh.frustumCulled = true;
       mesh.userData.lazyChunkKey = key;
       mesh.userData.lodType = lod;
@@ -1251,10 +1254,3 @@ function updateLazyChunkRendering(time) {
 }
 
 document.documentElement.dataset.viewerReady = 'true';
-
-// Connect the existing page's start button to the original viewer entry point.
-if (loadButton) {
-  loadButton.addEventListener('click', () => {
-    window.startWorldViewer(fileInput?.files?.[0] || selectedFile);
-  });
-}
