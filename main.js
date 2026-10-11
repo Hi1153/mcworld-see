@@ -1,5 +1,5 @@
-import * as THREE from 'https://esm.sh/three@0.180.0?bundle';
-import { OrbitControls } from 'https://esm.sh/three@0.180.0/examples/jsm/controls/OrbitControls.js?bundle';
+import * as THREE from 'https://esm.sh/three@0.180.0';
+import { OrbitControls } from 'https://esm.sh/three@0.180.0/examples/jsm/controls/OrbitControls.js';
 
 const $ = (id) => document.getElementById(id);
 const fileInput = $('worldFile');
@@ -46,6 +46,65 @@ function setLoading(
   $('loadingTitle').textContent = title;
   $('loadingText').textContent = message;
 }
+
+function chooseFile(file) {
+  if (!file) return;
+
+  if (!file.name.toLowerCase().endsWith('.mcworld')) {
+    selectedFile = null;
+    $('fileName').textContent =
+      `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    loadButton.disabled = true;
+    fileInput.value = '';
+    setStatus(
+      '拡張子が .mcworld のファイルを選択してください。',
+      'error'
+    );
+    return;
+  }
+
+  selectedFile = file;
+
+  $('fileName').textContent =
+    `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+
+  loadButton.disabled = isLoading;
+  setStatus('ファイルを選択しました。3D表示を開始できます。');
+}
+
+fileInput.addEventListener('change', () => {
+  chooseFile(fileInput.files?.[0]);
+});
+
+dropzone.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+
+for (const name of ['dragenter', 'dragover']) {
+  dropzone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropzone.classList.add('dragging');
+  });
+}
+
+for (const name of ['dragleave', 'drop']) {
+  dropzone.addEventListener(name, (event) => {
+    event.preventDefault();
+    dropzone.classList.remove('dragging');
+  });
+}
+
+dropzone.addEventListener('drop', (event) => {
+  chooseFile(event.dataTransfer?.files?.[0]);
+});
+
+// ひろのHTMLの「3D表示を開始」ボタンから、友達の既存読み込み処理を呼び出す。
+loadButton.addEventListener('click', () => {
+  window.startWorldViewer(fileInput.files?.[0] || selectedFile);
+});
 
 $('resetView').addEventListener('click', resetCamera);
 
@@ -857,14 +916,13 @@ function buildChunkSurface(chunks, chunk, center) {
   return geometry;
 }
 
-// 自分のHTMLから window.startWorldViewer(file) で呼び出す公開入口。
-// ファイル選択・ドラッグ＆ドロップ・ステータス表示はHTML側に任せる。
 window.startWorldViewer = async (file) => {
-  if (!(file instanceof File) || !file.name.toLowerCase().endsWith('.mcworld')) {
+  if (file) chooseFile(file);
+  else if (!selectedFile) chooseFile(fileInput.files?.[0]);
+  if (!selectedFile) {
     setStatus('.mcworld ファイルを先に選択してください。', 'error');
     return;
   }
-  selectedFile = file;
   await loadWorld();
 };
 
@@ -1042,38 +1100,6 @@ async function renderCompactChunks(chunks, bounds) {
 
   // 初期視点に映る分だけ先に生成。残りはカメラ移動に合わせて順次生成。
   scanVisibleChunks(performance.now(), true);
-
-  // 初期視点のフラスタム判定でチャンクが0件になっても、
-  // ワールド中心に近いチャンクを先に実メッシュ化して空画面を防ぐ。
-  const initialChunks = [...chunks.values()]
-    .sort((a, b) => chunkModelCenter(a).distanceToSquared(originTarget) - chunkModelCenter(b).distanceToSquared(originTarget))
-    .slice(0, 6);
-  for (const chunk of initialChunks) {
-    const key = renderChunkKey(chunk);
-    if (lazyBuiltKeys.has(key)) continue;
-    try {
-      const geometry = buildChunkSurface(chunks, chunk, center);
-      lazyBuiltKeys.add(key);
-      if (!geometry) continue;
-      const mesh = new THREE.Mesh(geometry, surfaceMaterial);
-      mesh.position.set(
-        chunk.cx * 16 - center.x,
-        chunk.cy * 16 - center.y,
-        chunk.cz * 16 - center.z
-      );
-      mesh.scale.setScalar(0.5);
-      mesh.frustumCulled = false;
-      mesh.userData.lazyChunkKey = key;
-      mesh.userData.lodType = 'near';
-      mesh.visible = true;
-      worldGroup.add(mesh);
-      lazyRenderedFaces += geometry.index ? geometry.index.count / 6 : 0;
-    } catch (error) {
-      console.error(`初期チャンク描画エラー (${key}):`, error);
-    }
-  }
-  const renderCount = $('renderCount');
-  if (renderCount) renderCount.textContent = lazyRenderedFaces.toLocaleString();
   return lazyRenderedFaces;
 }
 
