@@ -1,6 +1,6 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { OrbitControls } from 'https://esm.sh/three@0.180.0/examples/jsm/controls/OrbitControls.js';
-import { readMcworld } from 'https://esm.sh/mcbe-leveldb-reader@5.0.1';
+import { readMcworld } from 'https://esm.sh/mcbe-leveldb-reader@5.0.1?bundle&target=es2022';
 
 const $ = (id) => document.getElementById(id);
 const fileInput = $('worldFile');
