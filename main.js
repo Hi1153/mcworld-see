@@ -1,6 +1,5 @@
-
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/+esm';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js/+esm';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js';
 
 const $ = (id) => document.getElementById(id);
 const fileInput = $('worldFile');
@@ -21,7 +20,17 @@ let coordinateFramePending = false;
 let worldCenter = new THREE.Vector3();
 let loadedDimensions = new Map();
 let activeFileName = "";
-let needsRender = true;
+let lazyChunkData = null;
+let lazyChunkCenter = null;
+let lazyBuiltKeys = new Set();
+let lazyVisibleKeys = new Set();
+let lazyLastScan = 0;
+let lazyQueue = [];
+let lazyBuildBusy = false;
+let lazyRenderedFaces = 0;
+let lazyFarBuiltKeys = new Set();
+const FAR_LOD_DISTANCE = 120; // Three.js world units; close chunks remain full 3D
+const FAR_PROXY_GRID = 4;      // 4x4 top-surface samples per 16x16 subchunk
 
 function setStatus(message, type = '') {
   statusBox.textContent = message;
@@ -37,60 +46,6 @@ function setLoading(
   $('loadingTitle').textContent = title;
   $('loadingText').textContent = message;
 }
-
-function chooseFile(file) {
-  if (!file) return;
-
-  if (!file.name.toLowerCase().endsWith('.mcworld')) {
-    selectedFile = null;
-    $('fileName').textContent =
-      `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
-    loadButton.disabled = true;
-    fileInput.value = '';
-    setStatus(
-      '拡張子が .mcworld のファイルを選択してください。',
-      'error'
-    );
-    return;
-  }
-
-  selectedFile = file;
-
-  $('fileName').textContent =
-    `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
-
-  loadButton.disabled = isLoading;
-  setStatus('ファイルを選択しました。3D表示を開始できます。');
-}
-
-fileInput.addEventListener('change', () => {
-  chooseFile(fileInput.files?.[0]);
-});
-
-dropzone.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    fileInput.click();
-  }
-});
-
-for (const name of ['dragenter', 'dragover']) {
-  dropzone.addEventListener(name, (event) => {
-    event.preventDefault();
-    dropzone.classList.add('dragging');
-  });
-}
-
-for (const name of ['dragleave', 'drop']) {
-  dropzone.addEventListener(name, (event) => {
-    event.preventDefault();
-    dropzone.classList.remove('dragging');
-  });
-}
-
-dropzone.addEventListener('drop', (event) => {
-  chooseFile(event.dataTransfer?.files?.[0]);
-});
 
 $('resetView').addEventListener('click', resetCamera);
 
@@ -120,7 +75,7 @@ function initScene() {
   });
 
   // 低解像度で描画してGPU負荷を大幅に下げる（CSS上の表示サイズは維持）
-  renderer.setPixelRatio(1);
+  renderer.setPixelRatio(0.5);
 
   renderer.setSize(viewport.clientWidth, viewport.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -202,25 +157,13 @@ function initScene() {
   resizeObserver.observe(viewport);
 
   let lastRenderTime = 0;
-  let previousCameraPosition = camera.position.clone();
-  let previousTarget = controls.target.clone();
 
   renderer.setAnimationLoop((time) => {
-    // 描画は最大約30FPS。カメラが動いていない間はGPUで再描画しない。
-    controls.update();
-
-    if (
-      !camera.position.equals(previousCameraPosition) ||
-      !controls.target.equals(previousTarget)
-    ) {
-      needsRender = true;
-      previousCameraPosition.copy(camera.position);
-      previousTarget.copy(controls.target);
-    }
-
-    if (!needsRender || time - lastRenderTime < 33) return;
+    // 最大約30FPSに制限。描画距離による非表示処理は行わない。
+    if (time - lastRenderTime < 33) return;
     lastRenderTime = time;
-    needsRender = false;
+    controls.update();
+    updateLazyChunkRendering(time);
     renderer.render(scene, camera);
   });
 }
@@ -235,7 +178,6 @@ function resizeRenderer() {
   camera.updateProjectionMatrix();
 
   renderer.setSize(w, h);
-  needsRender = true;
 }
 
 function resetCamera() {
@@ -244,7 +186,6 @@ function resetCamera() {
   camera.position.copy(initialCamera.position);
   controls.target.copy(initialCamera.target);
   controls.update();
-  needsRender = true;
 }
 
 function updateHoveredCoordinate(event) {
@@ -752,7 +693,7 @@ function isTransparentLike(name) {
     /water|lava|glass|leaves|flower|tallgrass|short_grass|fern|vine|torch|rail|ladder|seagrass|kelp|fire|snow_layer|carpet|button|pressure_plate/.test(name || '');
 }
 
-const YIELD_EVERY_SUBCHUNKS = 8;
+const YIELD_EVERY_SUBCHUNKS = 32;
 const FACE_DEFS = [
   { n: [ 1, 0, 0], c: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
   { n: [-1, 0, 0], c: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
@@ -878,57 +819,35 @@ function walkGreedyFaces(chunks, chunk, visit) {
 }
 
 function buildChunkSurface(chunks, chunk, center) {
-  // 面の走査は1回だけ行う。従来は同じチャンクを2回走査していたため、
-  // 大きなワールドほどメッシュ生成時間が増えていた。
-  const faces = [];
-  walkGreedyFaces(chunks, chunk, (...faceData) => faces.push(faceData));
-  const faceCount = faces.length;
+  let faceCount = 0;
+  walkGreedyFaces(chunks, chunk, () => faceCount++);
   if (!faceCount) return null;
 
-  const positions = new Float32Array(faceCount * 12);
+  const positions = new Int8Array(faceCount * 12);
   const colors = new Uint8Array(faceCount * 12);
   const indices = new (faceCount * 4 > 65535 ? Uint32Array : Uint16Array)(faceCount * 6);
+  let face = 0;
 
-  for (let face = 0; face < faceCount; face++) {
-    const [f, axis, u, v, slice, uu, vv, width, height, packed, def] = faces[face];
+  walkGreedyFaces(chunks, chunk, (f, axis, u, v, slice, uu, vv, width, height, packed, def) => {
     const vStart = face * 4;
-    const r = (packed >>> 16) & 0xff;
-    const g = (packed >>> 8) & 0xff;
-    const b = packed & 0xff;
-
+    const r = (packed >>> 16) & 0xff, g = (packed >>> 8) & 0xff, b = packed & 0xff;
     for (let c = 0; c < 4; c++) {
       const corner = def.c[c];
-      let x = 0, y = 0, z = 0;
-      const axisValue = slice + (def.n[axis] > 0 ? 1 : 0);
-      if (axis === 0) x = axisValue * 2 - 1;
-      else if (axis === 1) y = axisValue * 2 - 1;
-      else z = axisValue * 2 - 1;
-      const uValue = (uu + corner[u] * width) * 2 - 1;
-      const vValue = (vv + corner[v] * height) * 2 - 1;
-      if (u === 0) x = uValue;
-      else if (u === 1) y = uValue;
-      else z = uValue;
-      if (v === 0) x = vValue;
-      else if (v === 1) y = vValue;
-      else z = vValue;
-
+      const coord = [0, 0, 0];
+      coord[axis] = slice + (def.n[axis] > 0 ? 1 : 0);
+      coord[u] = uu + corner[u] * width;
+      coord[v] = vv + corner[v] * height;
       const p = (vStart + c) * 3;
-      positions[p] = x;
-      positions[p + 1] = y;
-      positions[p + 2] = z;
-      colors[p] = r;
-      colors[p + 1] = g;
-      colors[p + 2] = b;
+      positions[p] = coord[0] * 2 - 1;
+      positions[p + 1] = coord[1] * 2 - 1;
+      positions[p + 2] = coord[2] * 2 - 1;
+      colors[p] = r; colors[p + 1] = g; colors[p + 2] = b;
     }
-
     const ii = face * 6;
-    indices[ii] = vStart;
-    indices[ii + 1] = vStart + 1;
-    indices[ii + 2] = vStart + 2;
-    indices[ii + 3] = vStart;
-    indices[ii + 4] = vStart + 2;
-    indices[ii + 5] = vStart + 3;
-  }
+    indices[ii] = vStart; indices[ii + 1] = vStart + 1; indices[ii + 2] = vStart + 2;
+    indices[ii + 3] = vStart; indices[ii + 4] = vStart + 2; indices[ii + 5] = vStart + 3;
+    face++;
+  });
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -938,13 +857,14 @@ function buildChunkSurface(chunks, chunk, center) {
   return geometry;
 }
 
+// 自分のHTMLから window.startWorldViewer(file) で呼び出す公開入口。
+// ファイル選択・ドラッグ＆ドロップ・ステータス表示はHTML側に任せる。
 window.startWorldViewer = async (file) => {
-  if (file) chooseFile(file);
-  else if (!selectedFile) chooseFile(fileInput.files?.[0]);
-  if (!selectedFile) {
+  if (!(file instanceof File) || !file.name.toLowerCase().endsWith('.mcworld')) {
     setStatus('.mcworld ファイルを先に選択してください。', 'error');
     return;
   }
+  selectedFile = file;
   await loadWorld();
 };
 
@@ -1064,9 +984,17 @@ async function loadWorld() {
 async function showDimension(id) {
   const data = loadedDimensions.get(id);
   if (!data) return;
-  setLoading(true, 'ディメンションを切り替え中…', '3Dモデルを作成しています。');
+  setLoading(true, 'ディメンションを切り替え中…', '表示するチャンクを生成しています。');
   await new Promise(resolve => setTimeout(resolve, 0));
   const renderedCount = await renderCompactChunks(data.chunks, data);
+  // Keep the loading overlay until the animation loop has generated initial visible chunks.
+  const waitStarted = performance.now();
+  while (lazyChunkData === data.chunks && lazyQueue.length &&
+         lazyBuiltKeys.size < 4 && performance.now() - waitStarted < 12000) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const text = $('loadingText');
+    if (text) text.textContent = `近距離3Dを生成中… ${lazyBuiltKeys.size.toLocaleString()} 個 · 遠景 ${lazyFarBuiltKeys.size.toLocaleString()} 個`;
+  }
   $('chunkCount').textContent = data.parsedCount.toLocaleString();
   $('blockCount').textContent = data.blockCount.toLocaleString();
   $('renderCount').textContent = renderedCount.toLocaleString();
@@ -1076,7 +1004,6 @@ async function showDimension(id) {
   if (dimensionLabel) dimensionLabel.textContent = name;
   setLoading(false);
 }
-
 async function renderCompactChunks(chunks, bounds) {
   clearWorldMeshes();
   createSurfaceMaterial();
@@ -1087,68 +1014,187 @@ async function renderCompactChunks(chunks, bounds) {
   );
   worldCenter.copy(center);
   worldGroup.position.set(0, 0, 0);
-  let renderedFaces = 0;
-  let processed = 0;
-  const total = chunks.size;
 
-  // 初期視点（ワールド原点付近）に近いチャンクから作り、
-  // 巨大ワールドでも最初の表示が出るまでの待ち時間を短くする。
-  const orderedChunks = [...chunks.values()].sort((a, b) => {
-    const adx = a.cx * 16 + 8;
-    const adz = a.cz * 16 + 8;
-    const bdx = b.cx * 16 + 8;
-    const bdz = b.cz * 16 + 8;
-    return (adx * adx + adz * adz) - (bdx * bdx + bdz * bdz);
-  });
+  // ブロックデータは保持するが、最初に全チャンクの3Dメッシュは作らない。
+  lazyChunkData = chunks;
+  lazyChunkCenter = center.clone();
+  lazyBuiltKeys = new Set();
+  lazyFarBuiltKeys = new Set();
+  lazyVisibleKeys = new Set();
+  lazyQueue = [];
+  lazyLastScan = 0;
+  lazyBuildBusy = false;
+  lazyRenderedFaces = 0;
 
-  // 小さなバッチ単位で生成する。毎サブチャンクごとのタイマーとDOM更新を減らし、
-  // 生成中は定期的にブラウザへ制御を返して操作不能になる時間を抑える。
-  const CHUNKS_PER_BATCH = 4;
-  for (let start = 0; start < orderedChunks.length; start += CHUNKS_PER_BATCH) {
-    const end = Math.min(start + CHUNKS_PER_BATCH, orderedChunks.length);
-
-    for (let i = start; i < end; i++) {
-      const chunk = orderedChunks[i];
-      const geometry = buildChunkSurface(chunks, chunk, center);
-      if (geometry) {
-        const mesh = new THREE.Mesh(geometry, surfaceMaterial);
-        mesh.position.set(
-          chunk.cx * 16 - center.x,
-          chunk.cy * 16 - center.y,
-          chunk.cz * 16 - center.z
-        );
-        mesh.scale.setScalar(0.5);
-        mesh.frustumCulled = true;
-        worldGroup.add(mesh);
-        renderedFaces += geometry.index ? geometry.index.count / 6 : 0;
-      }
-      processed++;
-    }
-
-    $('loadingText').textContent = `可視面を生成中… ${processed.toLocaleString()} / ${total.toLocaleString()} サブチャンク · ${renderedFaces.toLocaleString()} 面`;
-    needsRender = true;
-    await new Promise(resolve => requestAnimationFrame(() => resolve()));
-  }
-
-  // 初期視点はワールド座標 (0, 0) 付近に固定し、ワールドサイズからズームを自動計算しない。
-  // 表示用モデルは center 分だけ原点移動しているため、座標変換した原点を注視点にする。
   const originTarget = new THREE.Vector3(-center.x, -center.y, -center.z);
   controls.target.copy(originTarget);
-  camera.position.set(
-    originTarget.x + 90,
-    originTarget.y + 75,
-    originTarget.z + 90
-  );
+  camera.position.set(originTarget.x + 90, originTarget.y + 75, originTarget.z + 90);
   camera.near = 0.1;
-  camera.far = 10000;
+  camera.far = 150000;
   camera.updateProjectionMatrix();
   controls.minDistance = 1;
   controls.maxDistance = 2500;
   controls.update();
-  needsRender = true;
+  camera.updateMatrixWorld(true);
   initialCamera = { position: camera.position.clone(), target: controls.target.clone() };
   $('emptyState').classList.add('hidden');
-  return renderedFaces;
+  $('loadingText').textContent = `視界内のモデルを生成中… 0 / ${chunks.size.toLocaleString()} サブチャンク`;
+
+  // 初期視点に映る分だけ先に生成。残りはカメラ移動に合わせて順次生成。
+  scanVisibleChunks(performance.now(), true);
+  return lazyRenderedFaces;
+}
+
+function renderChunkKey(chunk) {
+  return `${chunk.cx},${chunk.cy},${chunk.cz}`;
+}
+
+function chunkModelCenter(chunk) {
+  return new THREE.Vector3(
+    (chunk.cx * 16 + 8 - lazyChunkCenter.x) * 0.5,
+    (chunk.cy * 16 + 8 - lazyChunkCenter.y) * 0.5,
+    (chunk.cz * 16 + 8 - lazyChunkCenter.z) * 0.5
+  );
+}
+
+function chunkInCameraView(chunk, frustum) {
+  const center = lazyChunkCenter;
+  const min = new THREE.Vector3(
+    (chunk.cx * 16 - center.x) * 0.5,
+    (chunk.cy * 16 - center.y) * 0.5,
+    (chunk.cz * 16 - center.z) * 0.5
+  );
+  const max = min.clone().addScalar(8);
+  return frustum.intersectsBox(new THREE.Box3(min, max));
+}
+
+// Distant proxy: a 4x4 grid of colored top faces, sampled from each chunk.
+// It is intentionally an approximate 2D-like silhouette, not a replacement for near 3D.
+function buildChunkFarProxy(chunk) {
+  const positions = [];
+  const colors = [];
+  const indices = [];
+  const step = 16 / FAR_PROXY_GRID;
+  for (let gz = 0; gz < FAR_PROXY_GRID; gz++) {
+    for (let gx = 0; gx < FAR_PROXY_GRID; gx++) {
+      let bestY = -1;
+      let bestPacked = 0;
+      const x0 = gx * step, z0 = gz * step;
+      // Sample a small patch and keep its highest non-air voxel.
+      for (let z = z0; z < z0 + step; z++) {
+        for (let x = x0; x < x0 + step; x++) {
+          for (let y = 15; y >= 0; y--) {
+            const packed = chunk.voxels[localIndex(x, y, z)];
+            if (packed) {
+              if (y > bestY) { bestY = y; bestPacked = packed; }
+              break;
+            }
+          }
+        }
+      }
+      if (bestY < 0) continue;
+      const base = positions.length / 3;
+      const x1 = x0 * 0.5, x2 = (x0 + step) * 0.5;
+      const z1 = z0 * 0.5, z2 = (z0 + step) * 0.5;
+      const y = (bestY + 1) * 0.5;
+      positions.push(x1,y,z1, x2,y,z1, x2,y,z2, x1,y,z2);
+      const r = ((bestPacked >>> 16) & 255) / 255;
+      const g = ((bestPacked >>> 8) & 255) / 255;
+      const b = (bestPacked & 255) / 255;
+      for (let k = 0; k < 4; k++) colors.push(r,g,b);
+      indices.push(base,base+1,base+2, base,base+2,base+3);
+    }
+  }
+  if (!positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function scanVisibleChunks(time, force = false) {
+  if (!lazyChunkData || !camera || !worldGroup) return;
+  if (!force && time - lazyLastScan < 120) return;
+  lazyLastScan = time;
+  camera.updateMatrixWorld(true);
+  const matrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(matrix);
+  const visible = new Set();
+  const queued = new Set(lazyQueue.map(item => `${renderChunkKey(item.chunk)}|${item.lod}`));
+
+  for (const chunk of lazyChunkData.values()) {
+    if (!chunkInCameraView(chunk, frustum)) continue;
+    const key = renderChunkKey(chunk);
+    visible.add(key);
+    const distance = camera.position.distanceTo(chunkModelCenter(chunk));
+    const lod = distance > FAR_LOD_DISTANCE ? 'far' : 'near';
+    const alreadyBuilt = lod === 'far' ? lazyFarBuiltKeys.has(key) : lazyBuiltKeys.has(key);
+    if (!alreadyBuilt && !queued.has(`${key}|${lod}`)) {
+      lazyQueue.push({ chunk, lod, distance });
+      queued.add(`${key}|${lod}`);
+    }
+  }
+  // Prioritize close-up 3D chunks, then nearer distant proxies.
+  lazyQueue.sort((a, b) => (a.lod === b.lod ? a.distance - b.distance : a.lod === 'near' ? -1 : 1));
+  lazyVisibleKeys = visible;
+
+  for (const mesh of worldGroup.children) {
+    const key = mesh.userData.lazyChunkKey;
+    if (!visible.has(key)) { mesh.visible = false; continue; }
+    const chunk = lazyChunkData.get(key);
+    if (!chunk) { mesh.visible = false; continue; }
+    const distance = camera.position.distanceTo(chunkModelCenter(chunk));
+    const wanted = distance > FAR_LOD_DISTANCE ? 'far' : 'near';
+    mesh.visible = mesh.userData.lodType === wanted;
+  }
+  const text = $('loadingText');
+  if (text && loading && !loading.classList.contains('hidden')) {
+    text.textContent = `可視 ${visible.size.toLocaleString()} · 近距離3D ${lazyBuiltKeys.size.toLocaleString()} · 遠景 ${lazyFarBuiltKeys.size.toLocaleString()}`;
+  }
+}
+
+function updateLazyChunkRendering(time) {
+  if (!lazyChunkData || lazyBuildBusy) {
+    scanVisibleChunks(time);
+    return;
+  }
+  scanVisibleChunks(time);
+  const item = lazyQueue.shift();
+  if (!item) return;
+  const { chunk, lod } = item;
+  const key = renderChunkKey(chunk);
+  lazyBuildBusy = true;
+  try {
+    const geometry = lod === 'far'
+      ? buildChunkFarProxy(chunk)
+      : buildChunkSurface(lazyChunkData, chunk, lazyChunkCenter);
+    if (lod === 'far') lazyFarBuiltKeys.add(key);
+    else lazyBuiltKeys.add(key);
+    if (geometry) {
+      const mesh = new THREE.Mesh(geometry, surfaceMaterial);
+      mesh.position.set(
+        chunk.cx * 16 - lazyChunkCenter.x,
+        chunk.cy * 16 - lazyChunkCenter.y,
+        chunk.cz * 16 - lazyChunkCenter.z
+      );
+      mesh.scale.setScalar(0.5);
+      mesh.frustumCulled = true;
+      mesh.userData.lazyChunkKey = key;
+      mesh.userData.lodType = lod;
+      const distance = camera.position.distanceTo(chunkModelCenter(chunk));
+      mesh.visible = lazyVisibleKeys.has(key) && ((distance > FAR_LOD_DISTANCE) === (lod === 'far'));
+      worldGroup.add(mesh);
+      if (lod === 'near') lazyRenderedFaces += geometry.index ? geometry.index.count / 6 : 0;
+      const renderCount = $('renderCount');
+      if (renderCount) renderCount.textContent = lazyRenderedFaces.toLocaleString();
+    }
+  } catch (error) {
+    console.error(`チャンク描画エラー (${lod}):`, error);
+  } finally {
+    lazyBuildBusy = false;
+  }
 }
 
 document.documentElement.dataset.viewerReady = 'true';
