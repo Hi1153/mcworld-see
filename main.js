@@ -25,7 +25,7 @@
 
 ;(()=>{
 "use strict";
-                                                        const PAGE_JS=document.currentScript?document.currentScript.textContent:'';
+                                                        const PAGE_JS=(document.currentScript&&document.currentScript.textContent)||'';
                                                         const $=i=>document.getElementById(i),td=new TextDecoder();
                                                         /* ---------- inflate (raw deflate) ---------- */
                                                         /* table-driven inflate (3-4x faster than the bit-by-bit version) */
@@ -460,7 +460,7 @@
                                                         await colNeed(ccx,ccz);let ty=topOf(ccx,ccz,px,pz);if(d==1||ty===null)ty=(y0+y1+1)*8;
                                                         T=[ccx*16+px-W.ox+.5,ty,ccz*16+pz-W.oz+.5];Dst=100;ya=.8;pi=.65;await build()}
                                                         /* ---------- WebGL ---------- */
-                                                        const cv=$('c'),gl=cv.getContext('webgl2',{antialias:false,powerPreference:'high-performance'});
+                                                        const cv=$('c'); if(!cv) throw Error('3Dキャンバス #c が見つかりません'); const gl=cv.getContext('webgl2',{antialias:false,powerPreference:'high-performance'}); if(!gl) throw Error('WebGL 2に対応していないか、無効になっています');
                                                         let T=[0,0,0],Dst=100,ya=.8,pi=.6,home,regions=new Map(),prog,uVP,uCam,uA,dirty=0;
                                                         const VS=`#version 300 es
                                                         in ivec4 aP;in vec4 aC;uniform mat4 uVP;uniform vec3 uCam;out vec3 vC;
