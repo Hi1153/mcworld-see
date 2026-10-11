@@ -450,7 +450,7 @@
                                                         W={Ms,M:null,z,fl,fc,fcb,bc:new Map(),bcb:0,sx,sz};
                                                         const ds=$('dm');ds.innerHTML=av.map(d=>`<option value="${d}">${['オーバーワールド','ネザー','ジ・エンド'][d]}</option>`).join('');ds.hidden=av.length<2;
                                                         $('nm').textContent=name;$('drop').hidden=true;$('hud').hidden=false;await setDim(av[0])}
-                                                        catch(e){console.error(e);msg('エラー: '+(e.message||e))}}
+                                                        catch(e){console.error(e);msg('エラー: '+(e.message||e));throw e}}
                                                         async function setDim(d){if(W.M)for(const o of W.M.values())if(o.r)o.v=null;
                                                         const M=W.Ms[d],cols=new Set();let y0=99,y1=-99;
                                                         for(const o of M.values()){if(!o.t)continue;cols.add(ckey(o.x,o.z));if(o.y<y0)y0=o.y;if(o.y>y1)y1=o.y}
