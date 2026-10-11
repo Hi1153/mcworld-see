@@ -470,6 +470,7 @@ function emit(Og, wx, wy, wz, c, f, sid, rt) {
   bu[O.n * 12 + 8] = c >> 16; bu[O.n * 12 + 9] = c >> 8 & 255; bu[O.n * 12 + 10] = c & 255; bu[O.n * 12 + 11] = sid; O.n++;
 }
 
+const EMPTY = { no: 0, nt: 0 };
 let MID = 0;
 function fin(G) {
   let tot = 0; for (const g of G) tot += g.n; if (!tot) return null;
