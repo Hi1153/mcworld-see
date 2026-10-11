@@ -1042,6 +1042,38 @@ async function renderCompactChunks(chunks, bounds) {
 
   // 初期視点に映る分だけ先に生成。残りはカメラ移動に合わせて順次生成。
   scanVisibleChunks(performance.now(), true);
+
+  // 初期視点のフラスタム判定でチャンクが0件になっても、
+  // ワールド中心に近いチャンクを先に実メッシュ化して空画面を防ぐ。
+  const initialChunks = [...chunks.values()]
+    .sort((a, b) => chunkModelCenter(a).distanceToSquared(originTarget) - chunkModelCenter(b).distanceToSquared(originTarget))
+    .slice(0, 6);
+  for (const chunk of initialChunks) {
+    const key = renderChunkKey(chunk);
+    if (lazyBuiltKeys.has(key)) continue;
+    try {
+      const geometry = buildChunkSurface(chunks, chunk, center);
+      lazyBuiltKeys.add(key);
+      if (!geometry) continue;
+      const mesh = new THREE.Mesh(geometry, surfaceMaterial);
+      mesh.position.set(
+        chunk.cx * 16 - center.x,
+        chunk.cy * 16 - center.y,
+        chunk.cz * 16 - center.z
+      );
+      mesh.scale.setScalar(0.5);
+      mesh.frustumCulled = false;
+      mesh.userData.lazyChunkKey = key;
+      mesh.userData.lodType = 'near';
+      mesh.visible = true;
+      worldGroup.add(mesh);
+      lazyRenderedFaces += geometry.index ? geometry.index.count / 6 : 0;
+    } catch (error) {
+      console.error(`初期チャンク描画エラー (${key}):`, error);
+    }
+  }
+  const renderCount = $('renderCount');
+  if (renderCount) renderCount.textContent = lazyRenderedFaces.toLocaleString();
   return lazyRenderedFaces;
 }
 
