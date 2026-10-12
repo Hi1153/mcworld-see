@@ -336,7 +336,7 @@ function gid(n, st) {
     if (!f) { const d = m.match(/^(light_blue|light_gray|white|orange|magenta|yellow|lime|pink|gray|silver|cyan|purple|blue|brown|green|red|black)_/); if (d) { c = DYE[d[1]]; f = 1; } }
     if (!f) { const w = m.match(/^(?:stripped_)?(dark_oak|oak|spruce|birch|jungle|acacia|mangrove|cherry|bamboo|crimson|warped|pale_oak)(?:_|$)/); if (w) { c = WOOD[w[1]]; f = 1; } }
     if (!f) for (const [r, h] of RB) if (r.test(m)) { c = h; f = 1; break; }
-    if (!f) c = hsl(hash(m) % 360, .3, .5);
+    if (!f) c = hsl(hash(m) % 360, .42, .5);
     bs = shape(n, st); if (bs) { k = 4; xc = XC; rt = RT; if (/stairs$/.test(n)) sv = { d: (st.weirdo_direction | 0) & 3, u: st.upside_down_bit | 0 }; cf = /fence$/.test(n) ? 1 : /(glass_pane|_bars)$/.test(n) ? 2 : /fence_gate$/.test(n) ? 3 : /^structure_void$/.test(n) ? 5 : 0; if (/(^|_)door$/.test(n)) di = { u: st.upper_block_bit | 0, d: st.direction | 0, o: st.open_bit | 0, h: st.door_hinge_bit | 0 }; }
   }
   col.push(c); crs.push(xc); rts.push(rt); kind.push(k); shp.push(bs); dinf.push(di); sti.push(sv); cfa.push(cf); tr.push((k == 2 || /glass/.test(n) || /^(frosted_)?ice$/.test(n)) ? 1 : 0); wl.push(0); ids.set(ck, i); return i;
@@ -395,6 +395,7 @@ const MOB = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod|Android/i.tes
 const LIM = MOB ? { fc: 9e7, bc: 3e7, raw: 15000, S: 5000, mc: 1.1, mcn: 150000, wk: 4, win: 1500 } : { fc: 3e8, bc: 1.5e8, raw: 40000, S: 14000, mc: 1.5, mcn: 400000, wk: 8, win: 900 };
 const ckey = (x, z) => (x + 2097152) * 4194304 + (z + 2097152), unckey = c => { const zz = c % 4194304; return [(c - zz) / 4194304 - 2097152, zz - 2097152]; }, CLC = new Map();
 let W = null, btok = 0, bc = [0, 0, 0];
+let renderDistance = 12; // 0 = unlimited, otherwise chunks
 const key = (x, y, z) => ((x + 2097152) * 4194304 + (z + 2097152)) * 64 + y + 16;
 
 const msg = text => {
@@ -532,36 +533,77 @@ function updateUIStats(chunks, faces) {
   if (renderEl) renderEl.textContent = `${faces.toLocaleString()} 面`;
 }
 
+function setupRenderDistanceControl() {
+  if (document.getElementById('renderDistanceControl')) return;
+  const viewport = document.getElementById('viewport');
+  if (!viewport || !viewport.parentElement) return;
+
+  const panel = document.createElement('div');
+  panel.id = 'renderDistanceControl';
+  panel.style.cssText = 'box-sizing:border-box;width:100%;padding:12px 14px;margin:0 0 10px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(20,24,32,.92);color:#f4f6f8;font:14px/1.4 system-ui,-apple-system,sans-serif;';
+  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><label for="renderDistanceSlider" style="font-weight:600">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12チャンク</output></div><input id="renderDistanceSlider" type="range" min="5" max="121" step="1" value="12" style="display:block;width:100%;margin:0;accent-color:#60a5fa;touch-action:pan-y"><div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#aeb7c4;font-size:12px"><span>5チャンク</span><span>120チャンク</span><span>無制限</span></div>';
+  viewport.parentElement.insertBefore(panel, viewport);
+
+  const slider = panel.querySelector('#renderDistanceSlider');
+  const output = panel.querySelector('#renderDistanceValue');
+  const updateLabel = () => {
+    const value = Number(slider.value);
+    renderDistance = value === 121 ? 0 : value;
+    output.textContent = renderDistance === 0 ? '無制限' : `${renderDistance}チャンク`;
+  };
+  slider.addEventListener('input', updateLabel);
+  slider.addEventListener('change', () => {
+    updateLabel();
+    if (!W) return;
+    W.MC.clear(); W.mcF = 0;
+    upload([]);
+    build();
+  });
+  updateLabel();
+}
+
 async function build() {
   rebase();
-  const tok = ++btok, { y0, y1 } = W, R = 12;
+  const tok = ++btok, { y0, y1 } = W, unlimited = renderDistance === 0, R = unlimited ? 0 : renderDistance;
   const cx = Math.floor((T[0] + W.ox) / 16), cz = Math.floor((T[2] + W.oz) / 16), cy = Math.floor(T[1] / 16);
   bc = [cx, cz, cy];
 
   if (W.raw > LIM.raw) {
-    const lim = (R + 4) * (R + 4);
-    for (const o of W.M.values()) if (o.r && o.v) { const dx = o.x - cx, dz = o.z - cz; if (dx * dx + dz * dz > lim) { o.v = null; W.raw--; } }
+    if (!unlimited) {
+      const lim = (R + 4) * (R + 4);
+      for (const o of W.M.values()) if (o.r && o.v) { const dx = o.x - cx, dz = o.z - cz; if (dx * dx + dz * dz > lim) { o.v = null; W.raw--; } }
+    }
     W.S.clear();
   } else if (W.S.size > LIM.S) W.S.clear();
 
   const MC = W.MC, MAXF = 7e6; let total = 0; const list = [], todo = [];
   msg('描画準備中…');
 
-  let cl = CLC.get(R);
-  if (!cl) {
-    cl = []; for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) { const d = dx * dx + dz * dz; if (d <= R * R) cl.push([d, dx, dz]); }
-    cl.sort((p, q) => p[0] - q[0]); if (CLC.size > 3) CLC.clear(); CLC.set(R, cl);
+  let cl;
+  if (unlimited) {
+    cl = [];
+    for (const columnKey of W.cols) {
+      const [scx, scz] = unckey(columnKey), dx = scx - cx, dz = scz - cz;
+      cl.push([dx * dx + dz * dz, dx, dz]);
+    }
+    cl.sort((a, b) => a[0] - b[0]);
+  } else {
+    cl = CLC.get(R);
+    if (!cl) {
+      cl = []; for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) { const d = dx * dx + dz * dz; if (d <= R * R) cl.push([d, dx, dz]); }
+      cl.sort((p, q) => p[0] - q[0]); if (CLC.size > 3) CLC.clear(); CLC.set(R, cl);
+    }
   }
-  const sa = Math.max(y0, cy - R), sb = Math.min(y1, cy + R);
+  const sa = unlimited ? y0 : Math.max(y0, cy - R), sb = unlimited ? y1 : Math.min(y1, cy + R);
 
   for (const [, dx, dz] of cl) {
-    const scx = cx + dx, scz = cz + dz; if (!W.cols.has(ckey(scx, scz))) continue;
+    const scx = cx + dx, scz = cz + dz; if (!unlimited && !W.cols.has(ckey(scx, scz))) continue;
     for (let sy = sa; sy <= sb; sy++) {
       const k = key(scx, sy, scz), m = MC.get(k);
       if (m === undefined) todo.push([scx, sy, scz, k]);
       else if (m.no || m.nt) { list.push(m); total += m.no + m.nt; }
     }
-    if (total > MAXF) break;
+    if (!unlimited && total > MAXF) break;
   }
 
   let lu = 0, gap = 300;
@@ -573,7 +615,7 @@ async function build() {
 
   let ready = 0, win = 300;
   for (let j = 0; j < todo.length; j++) {
-    if (total > MAXF) break;
+    if (!unlimited && total > MAXF) break;
     if (j >= ready) {
       const end = Math.min(todo.length, ready + win), need = [], seen = new Set();
       for (let q = ready; q < end; q++) {
@@ -599,7 +641,7 @@ async function build() {
   }
   flush();
 
-  if (W.mcF > MAXF * LIM.mc || MC.size > LIM.mcn) {
+  if (!unlimited && (W.mcF > MAXF * LIM.mc || MC.size > LIM.mcn)) {
     const lim = (R + 2) * (R + 2);
     for (const [k, m] of MC) { const [mx, mz] = unkey(k), dx = mx - cx, dz = mz - cz; if (dx * dx + dz * dz > lim) { MC.delete(k); W.mcF -= m.no + m.nt; } }
   }
@@ -609,7 +651,7 @@ async function build() {
 }
 
 function maybe() {
-  if (!W) return; const R = 12, t = Math.max(2, Math.min(R >> 2, 6)), cx = Math.floor((T[0] + W.ox) / 16), cz = Math.floor((T[2] + W.oz) / 16), cy = Math.floor(T[1] / 16);
+  if (!W || renderDistance === 0) return; const R = renderDistance, t = Math.max(2, Math.min(R >> 2, 6)), cx = Math.floor((T[0] + W.ox) / 16), cz = Math.floor((T[2] + W.oz) / 16), cy = Math.floor(T[1] / 16);
   if (Math.abs(cx - bc[0]) > t || Math.abs(cz - bc[1]) > t || Math.abs(cy - bc[2]) > t) build();
 }
 
@@ -831,13 +873,14 @@ let T = [0, 0, 0], Dst = 100, ya = .8, pi = .6, regions = new Map(), prog, uVP, 
 const VS = `#version 300 es
 in ivec4 aP;in vec4 aC;uniform mat4 uVP;uniform vec3 uCam;out vec3 vC;
 const float SH[6]=float[](.8,.7,1.,.5,.75,.65);
+vec3 vivid(vec3 c){float l=dot(c,vec3(.299,.587,.114));return clamp(mix(vec3(l),c,1.28),0.,1.);}
 const vec3 LO[${BOXES.length}]=vec3[](${BOXES.map(b => `vec3(${b[0].toFixed(4)},${b[1].toFixed(4)},${b[2].toFixed(4)})`).join(',')});
 const vec3 HI[${BOXES.length}]=vec3[](${BOXES.map(b => `vec3(${b[3].toFixed(4)},${b[4].toFixed(4)},${b[5].toFixed(4)})`).join(',')});
 void main(){
   int sid=int(aC.a*255.+.5);int f=aP.w&7;int a=f>>1;float s=(f&1)==0?1.:0.;float u=float(gl_VertexID&1),v=float(gl_VertexID>>1);
-  if(f>=6){vec3 l=LO[sid],h=HI[sid];vec3 p=vec3(aP.xyz)+vec3(mix(l.x,h.x,u),mix(l.y,h.y,v),f==6?mix(l.z,h.z,u):mix(h.z,l.z,u));vC=aC.rgb;gl_Position=uVP*vec4(p,1.);return;}
+  if(f>=6){vec3 l=LO[sid],h=HI[sid];vec3 p=vec3(aP.xyz)+vec3(mix(l.x,h.x,u),mix(l.y,h.y,v),f==6?mix(l.z,h.z,u):mix(h.z,l.z,u));vC=vivid(aC.rgb);gl_Position=uVP*vec4(p,1.);return;}
   vec3 q=a==0?vec3(s,u,v):a==1?vec3(u,s,v):vec3(u,v,s);vec3 p=vec3(aP.xyz)+mix(LO[sid],HI[sid],q);
-  vC=aC.rgb*SH[f]*(.94+.012*float((aP.w>>3)&7));
+  vC=vivid(aC.rgb)*SH[f]*(.94+.012*float((aP.w>>3)&7));
   int rt=(aP.w>>6)&15;
   if(rt>0){
     float an=-float(rt)*.3926991;float cs=cos(an);float sn=sin(an);
@@ -919,7 +962,7 @@ function mat() {
   let x = [z[2], 0, -z[0]]; const nx = Math.hypot(...x); x = x.map(v => v / nx);
   const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const V = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1];
-  const R = 12, N = Math.max(1, Dst * .01), F = Dst * 8 + 2000 + R * 32, f = 1 / Math.tan(.4), a = cv.width / cv.height, P = [f / a, 0, 0, 0, 0, f, 0, 0, 0, 0, (F + N) / (N - F), -1, 0, 0, 2 * F * N / (N - F), 0], o = new Float32Array(16);
+  const R = renderDistance === 0 ? 120 : renderDistance, N = Math.max(1, Dst * .01), F = Dst * 8 + 2000 + R * 32, f = 1 / Math.tan(.4), a = cv.width / cv.height, P = [f / a, 0, 0, 0, 0, f, 0, 0, 0, 0, (F + N) / (N - F), -1, 0, 0, 2 * F * N / (N - F), 0], o = new Float32Array(16);
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += P[k * 4 + r] * V[c * 4 + k]; o[c * 4 + r] = s; }
   return { m: o, x, y, e };
 }
@@ -983,6 +1026,7 @@ window.startWorldViewer = async function (file) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+  setupRenderDistanceControl();
   const dimensionSelect = document.getElementById('dimensionSelect');
   const resetButton = document.getElementById('resetView');
   const fullscreenButton = document.getElementById('fullscreen');
