@@ -862,13 +862,13 @@ async function setDimension(d) {
   }
   if (gl) { upload([]); draw(); }
   await colNeed(ccx, ccz); let ty = topOf(ccx, ccz, px, pz); if (d == 1 || ty === null) ty = (y0 + y1 + 1) * 8;
-  T = [ccx * 16 + px - W.ox + .5, ty, ccz * 16 + pz - W.oz + .5]; Dst = 100; ya = .8; pi = .65;
+  T = [ccx * 16 + px - W.ox + .5, ty, ccz * 16 + pz - W.oz + .5]; homeT = T.slice(); Dst = 100; ya = .8; pi = .65;
   await build();
 }
 
 /* ---------- WebGL Rendering ---------- */
 let cv = null, gl = null;
-let T = [0, 0, 0], Dst = 100, ya = .8, pi = .6, regions = new Map(), prog, uVP, uCam, uA, dirty = 0;
+let T = [0, 0, 0], homeT = [0, 0, 0], Dst = 100, ya = .8, pi = .6, regions = new Map(), prog, uVP, uCam, uA, dirty = 0;
 
 const VS = `#version 300 es
 in ivec4 aP;in vec4 aC;uniform mat4 uVP;uniform vec3 uCam;out vec3 vC;
@@ -992,6 +992,7 @@ function draw() {
 const redraw = () => { if (!dirty) { dirty = 1; requestAnimationFrame(draw); } };
 
 function resetCameraView() {
+  T = homeT.slice();
   Dst = 100; ya = .8; pi = .65; redraw();
 }
 
