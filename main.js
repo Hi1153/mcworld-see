@@ -615,7 +615,7 @@ async function build() {
       cl.sort((p, q) => p[0] - q[0]); if (CLC.size > 3) CLC.clear(); CLC.set(R, cl);
     }
   }
-  const sa = unlimited ? y0 : Math.max(y0, cy - R), sb = unlimited ? y1 : Math.min(y1, cy + R);
+  const sa = y0, sb = y1; // Vertical chunk range is always unlimited; render distance only limits X/Z.
 
   for (const [, dx, dz] of cl) {
     const scx = cx + dx, scz = cz + dz; if (!unlimited && !W.cols.has(ckey(scx, scz))) continue;
