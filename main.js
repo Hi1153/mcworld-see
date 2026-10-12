@@ -730,8 +730,7 @@ function workerSource() {
         const d = meth ? inflate(s, 0, us) : s;
         const X = [], Z = [], Y = [], S = [], Dm = [], Tt = [], BO = [], BS = [], EO = [], VL = [];
         ldb(d, (k, sq, t, v, ref) => {
-          const L = k.length, dm = L == 14 ? k[8] | k[9] << 8 | k[10] << 16 : 0;
-          if (dm > 2) return;
+          const L = k.length, dm = L == 14 ? (k[8] | k[9] << 8 | k[10] << 16 | k[11] << 24) : 0;
           X.push(k[0] | k[1] << 8 | k[2] << 16 | k[3] << 24);
           Z.push(k[4] | k[5] << 8 | k[6] << 16 | k[7] << 24);
           Y.push(k[L - 1] << 24 >> 24);
@@ -741,7 +740,7 @@ function workerSource() {
         const r = {
           i, n: X.length,
           X: Int32Array.from(X), Z: Int32Array.from(Z), Y: Int8Array.from(Y),
-          S: Float64Array.from(S), Dm: Uint8Array.from(Dm), T: Uint8Array.from(Tt),
+          S: Float64Array.from(S), Dm: Int32Array.from(Dm), T: Uint8Array.from(Tt),
           BO: Float64Array.from(BO), BS: Float64Array.from(BS), EO: Float64Array.from(EO), VL: Float64Array.from(VL),
           file: meth ? (d.byteLength === d.buffer.byteLength ? d.buffer : d.slice().buffer) : null
         };
@@ -815,10 +814,10 @@ async function loadWorld(f) {
     const z = await openZip(f);
     const lv = z.find(e => /(^|\/)level\.dat$/.test(e.name)); let name = f.name.replace(/\.\w+$/, ''), sx = 0, sz = 0;
     if (lv) { try { const d = await z.get(lv), o = nbt(d.subarray(8), { p: 0 }); if (o.LevelName) name = o.LevelName; sx = o.SpawnX | 0; sz = o.SpawnZ | 0; } catch (e) { } }
-    const Ms = [new Map(), new Map(), new Map()], fc = new Map(); let cf = 0, fcb = 0;
+    const Ms = new Map([[0, new Map()], [1, new Map()], [2, new Map()]]), fc = new Map(); let cf = 0, fcb = 0;
     const take = (k, s, t, v, ref) => {
       const L = k.length; if ((L != 10 && L != 14) || k[L - 2] != 47) return;
-      const dm = L == 14 ? k[8] | k[9] << 8 | k[10] << 16 : 0; if (dm > 2) return; const M = Ms[dm];
+      const dm = L == 14 ? (k[8] | k[9] << 8 | k[10] << 16 | k[11] << 24) : 0; let M = Ms.get(dm); if (!M) { M = new Map(); Ms.set(dm, M); }
       const x = k[0] | k[1] << 8 | k[2] << 16 | k[3] << 24, zz = k[4] | k[5] << 8 | k[6] << 16 | k[7] << 24;
       const y = k[L - 1] << 24 >> 24, kk = key(x, y, zz), o = M.get(kk);
       if (!o || o.s < s) {
@@ -845,14 +844,14 @@ async function loadWorld(f) {
     }
     msg('ワールドを準備中…'); await tick();
 
-    const av = [0, 1, 2].filter(d => { for (const o of Ms[d].values()) if (o.t) return true; return false; });
+    const av = [...Ms.keys()].filter(d => { const map = Ms.get(d); for (const o of map.values()) if (o.t) return true; return false; }).sort((a, b) => a - b);
     if (!av.length) throw Error('ブロックを復元できませんでした');
 
     W = { Ms, M: null, z, fl, fc, fcb, bc: new Map(), bcb: 0, sx, sz };
 
     const ds = document.getElementById('dimensionSelect');
     if (ds) {
-      ds.innerHTML = av.map(d => `<option value="${d}">${['オーバーワールド', 'ネザー', 'ジ・エンド'][d]}</option>`).join('');
+      ds.innerHTML = av.map(d => `<option value="${d}">${({0:'オーバーワールド',1:'ネザー',2:'ジ・エンド'})[d] || `カスタムディメンション (ID: ${d})`}</option>`).join('');
       ds.disabled = av.length < 2;
     }
 
@@ -878,7 +877,7 @@ async function loadWorld(f) {
 async function setDimension(d) {
   if (!W) return;
   if (W.M) for (const o of W.M.values()) if (o.r) o.v = null;
-  const M = W.Ms[d], cols = new Set(); let y0 = 99, y1 = -99;
+  const M = W.Ms.get(d), cols = new Set(); let y0 = 99, y1 = -99;
   for (const o of M.values()) { if (!o.t) continue; cols.add(ckey(o.x, o.z)); if (o.y < y0) y0 = o.y; if (o.y > y1) y1 = o.y; }
   let tx = W.sx >> 4, tz = W.sz >> 4; if (d == 1) { tx >>= 3; tz >>= 3; } else if (d == 2) { tx = 0; tz = 0; }
   Object.assign(W, { M, S: new Map(), MC: new Map(), mcF: 0, cols, ox: tx * 16, oz: tz * 16, y0, y1, raw: 0, dim: d });
