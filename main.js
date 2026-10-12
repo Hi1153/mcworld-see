@@ -578,8 +578,7 @@ function setupRenderDistanceControl() {
   slider.addEventListener('change', () => {
     updateLabel();
     if (!W) return;
-    W.MC.clear(); W.mcF = 0;
-    upload([]);
+    // Keep previously meshed chunks in W.MC; build() reuses them.
     build();
   });
   updateLabel();
@@ -663,10 +662,7 @@ async function build() {
   }
   flush();
 
-  if (!unlimited && (W.mcF > MAXF * LIM.mc || MC.size > LIM.mcn)) {
-    const lim = (R + 2) * (R + 2);
-    for (const [k, m] of MC) { const [mx, mz] = unkey(k), dx = mx - cx, dz = mz - cz; if (dx * dx + dz * dz > lim) { MC.delete(k); W.mcF -= m.no + m.nt; } }
-  }
+  // Keep the mesh cache so chunks already processed can be reused when revisited.
   updateUIStats(list.length, total);
   showLoading(false);
   msg(total ? '読み込み完了' : 'この範囲に描画できるブロックがありません');
@@ -802,6 +798,16 @@ async function parseLdbPool(z, fl, idxs, Ms, onFile) {
 }
 
 async function loadWorld(f) {
+  // A newly selected .mcworld starts a fresh cache; never reuse meshes from the previous world.
+  btok++;
+  if (W) {
+    if (W.MC && typeof W.MC.clear === 'function') W.MC.clear();
+    if (W.S && typeof W.S.clear === 'function') W.S.clear();
+    if (W.M && typeof W.M.clear === 'function') W.M.clear();
+    if (W.cols && typeof W.cols.clear === 'function') W.cols.clear();
+    W = null;
+  }
+  if (typeof regions !== 'undefined' && regions && typeof regions.clear === 'function') regions.clear();
   showLoading(true);
   msg('ワールドファイルを解析中…');
   await tick();
