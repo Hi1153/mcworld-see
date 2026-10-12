@@ -536,13 +536,18 @@ function updateUIStats(chunks, faces) {
 function setupRenderDistanceControl() {
   if (document.getElementById('renderDistanceControl')) return;
   const viewport = document.getElementById('viewport');
-  if (!viewport || !viewport.parentElement) return;
+  if (!viewport) return;
 
   const panel = document.createElement('div');
   panel.id = 'renderDistanceControl';
-  panel.style.cssText = 'box-sizing:border-box;width:100%;padding:12px 14px;margin:0 0 10px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(20,24,32,.92);color:#f4f6f8;font:14px/1.4 system-ui,-apple-system,sans-serif;';
-  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><label for="renderDistanceSlider" style="font-weight:600">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12チャンク</output></div><input id="renderDistanceSlider" type="range" min="5" max="121" step="1" value="12" style="display:block;width:100%;margin:0;accent-color:#60a5fa;touch-action:pan-y"><div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#aeb7c4;font-size:12px"><span>5チャンク</span><span>120チャンク</span><span>無制限</span></div>';
-  viewport.parentElement.insertBefore(panel, viewport);
+  panel.style.cssText = 'position:relative;z-index:20;display:block;box-sizing:border-box;width:100%;flex:0 0 auto;padding:12px 14px;margin:0 0 10px;border:1px solid rgba(255,255,255,.18);border-radius:12px;background:#171d29;color:#f4f6f8;font:14px/1.4 system-ui,-apple-system,sans-serif;visibility:visible;opacity:1;';
+  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><label for="renderDistanceSlider" style="font-weight:600">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12チャンク</output></div><input id="renderDistanceSlider" aria-label="描画距離" type="range" min="5" max="121" step="1" value="12" style="appearance:auto;-webkit-appearance:slider-horizontal;display:block;box-sizing:border-box;width:100%;height:28px;margin:0;padding:0;accent-color:#38bdf8;touch-action:pan-y;cursor:pointer"><div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#c2cbd8;font-size:12px"><span>5チャンク</span><span>120チャンク</span><span>無制限</span></div>';
+
+  // Keep the control outside the viewport/canvas wrapper so overflow styles cannot hide it.
+  const viewerPanel = viewport.closest('.viewer-panel');
+  if (viewerPanel) viewerPanel.insertBefore(panel, viewport.parentElement || viewport);
+  else if (viewport.parentElement) viewport.parentElement.insertBefore(panel, viewport);
+  else return;
 
   const slider = panel.querySelector('#renderDistanceSlider');
   const output = panel.querySelector('#renderDistanceValue');
@@ -1025,7 +1030,7 @@ window.startWorldViewer = async function (file) {
   await loadWorld(file);
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+const initializeViewerUI = () => {
   setupRenderDistanceControl();
   const dimensionSelect = document.getElementById('dimensionSelect');
   const resetButton = document.getElementById('resetView');
@@ -1049,4 +1054,9 @@ document.addEventListener('DOMContentLoaded', () => {
       document.body.classList.toggle('viewer-fullscreen');
     });
   }
-});
+};
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeViewerUI, { once: true });
+} else {
+  initializeViewerUI();
+}
