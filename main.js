@@ -189,17 +189,6 @@ const RA = [[/iron_chain|^chain$/, 0x4b4e5a], [/pale_oak_(leaves|sapling)/, 0x8f
 const RB = [[/tinted_glass/, 0x2c242f], [/glass/, 0xb8e0e8], [/deepslate/, 0x4a4a52], [/blackstone/, 0x2c262d], [/basalt/, 0x4a4a4e], [/tuff/, 0x6b6e60], [/calcite/, 0xe0e0da], [/dripstone/, 0x866a56], [/granite/, 0x9a6b57], [/diorite/, 0xc8c8c4], [/andesite/, 0x888888], [/mossy/, 0x6a7a5a], [/cobble/, 0x6f6f6f], [/stone_brick/, 0x7a7a7a], [/brick/, 0xa0554a], [/terracotta/, 0xa8603e], [/stone|smooth|slab/, 0x7d7d7d],
 [/furnace|dispenser|dropper|observer|piston|hopper|cauldron|anvil|bars|chain/, 0x666666], [/planks|log|wood|table|bookshelf|barrel|chest|door|lectern|loom|composter|jukebox|note/, 0x8b6b3f], [/lamp/, 0x8a5a30]];
 
-function hsl(h, s, l) { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return (f(0) * 255 | 0) << 16 | (f(8) * 255 | 0) << 8 | (f(4) * 255 | 0); }
-function hash(s) { let h = 7; for (let i = 0; i < s.length; i++) h = Math.imul(h, 31) + s.charCodeAt(i) | 0; return h >>> 0; }
-function nm(o) {
-  let n = (o.name || o.Name || 'air').replace('minecraft:', '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase(); const s = o.states || {}, wt = s.wood_type, c = s.color;
-  if (typeof wt == 'string' && /^(planks|fence|wooden_slab|double_wooden_slab)$/.test(n)) return wt + (n == 'planks' ? '_planks' : n == 'fence' ? '_fence' : n == 'double_wooden_slab' ? '_double_slab' : '_slab');
-  if (typeof c == 'string') { if (n == 'stained_hardened_clay') return c + '_terracotta'; if (/^(wool|concrete|concrete_powder|stained_glass|stained_glass_pane|carpet|shulker_box)$/.test(n)) return c + '_' + n; }
-  if (n == 'coral_block') { const k = { blue: 'tube', pink: 'brain', purple: 'bubble', red: 'fire', yellow: 'horn' }[s.coral_color]; if (k) return (s.dead_bit ? 'dead_' : '') + k + '_coral_block'; }
-  if (n == 'stone_stairs') return 'cobblestone_stairs';
-  return n;
-}
-
 const BOXES = [], BM = new Map();
 function bx(a, b, c, d, e, f) { const k = a + ',' + b + ',' + c + ',' + d + ',' + e + ',' + f, i = BM.get(k); if (i !== undefined) return i; BM.set(k, BOXES.length); BOXES.push([a / 16, b / 16, c / 16, d / 16, e / 16, f / 16]); return BOXES.length - 1; }
 bx(0, 0, 0, 16, 16, 16);
@@ -322,6 +311,18 @@ function vk(st, n) {
          (/chain/.test(n) ? ',' + (st.pillar_axis || st['minecraft:pillar_axis'] || '') : '') +
          (/banner/.test(n) ? ',g' + ((st.ground_sign_direction | 0) & 15) : '');
 }
+
+function hsl(h, s, l) { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return (f(0) * 255 | 0) << 16 | (f(8) * 255 | 0) << 8 | (f(4) * 255 | 0); }
+function hash(s) { let h = 7; for (let i = 0; i < s.length; i++) h = Math.imul(h, 31) + s.charCodeAt(i) | 0; return h >>> 0; }
+function nm(o) {
+  let n = (o.name || o.Name || 'air').replace('minecraft:', '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase(); const s = o.states || {}, wt = s.wood_type, c = s.color;
+  if (typeof wt == 'string' && /^(planks|fence|wooden_slab|double_wooden_slab)$/.test(n)) return wt + (n == 'planks' ? '_planks' : n == 'fence' ? '_fence' : n == 'double_wooden_slab' ? '_double_slab' : '_slab');
+  if (typeof c == 'string') { if (n == 'stained_hardened_clay') return c + '_terracotta'; if (/^(wool|concrete|concrete_powder|stained_glass|stained_glass_pane|carpet|shulker_box)$/.test(n)) return c + '_' + n; }
+  if (n == 'coral_block') { const k = { blue: 'tube', pink: 'brain', purple: 'bubble', red: 'fire', yellow: 'horn' }[s.coral_color]; if (k) return (s.dead_bit ? 'dead_' : '') + k + '_coral_block'; }
+  if (n == 'stone_stairs') return 'cobblestone_stairs';
+  return n;
+}
+
 
 const ids = new Map(), col = [], kind = [], shp = [], dinf = [], cfa = [], tr = [], sti = [], crs = [], rts = [], wl = [], wlOf = new Map();
 function gid(n, st) {
