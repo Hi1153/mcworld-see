@@ -535,6 +535,73 @@
     .dimension-control select { max-width: 190px; padding: 5px 8px; border: 1px solid var(--border, #d9dee7); border-radius: 8px; background: #fff; color: inherit; font: inherit; }
     .dimension-control select:disabled { opacity: .65; }
 
+    .viewer-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid var(--border);
+    }
+
+    .viewer-control {
+      min-width: 0;
+      padding: 16px 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .viewer-control + .viewer-control {
+      border-left: 1px solid var(--border);
+    }
+
+    .viewer-control > label {
+      display: block;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .viewer-control select {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      min-height: 42px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: white;
+      color: var(--text);
+      font: inherit;
+    }
+
+    .viewer-control select:disabled { opacity: .65; }
+
+    #renderDistanceControl {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      width: 100%;
+      color: var(--muted);
+      font: inherit;
+    }
+
+    #renderDistanceSlider {
+      width: 100%;
+      margin: 8px 0 2px;
+      accent-color: var(--accent);
+      touch-action: pan-y;
+    }
+
+    #renderDistanceSlider:disabled { opacity: .4; }
+
+    #renderDistanceValue {
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 750;
+    }
+
+    @media (max-width: 560px) {
+      .viewer-control { padding: 15px 12px; }
+    }
+
     .viewer-footer {
       display: flex;
       justify-content: space-between;
@@ -812,8 +879,24 @@
           </div>
         </div>
 
+        <div class="viewer-controls">
+          <div class="viewer-control dimension-control">
+            <label for="dimensionSelect">ディメンション</label>
+            <select id="dimensionSelect" disabled aria-label="ディメンション選択">
+              <option value="0">読み込み前</option>
+            </select>
+            <span id="dimensionLabel">—</span>
+          </div>
+          <div class="viewer-control">
+            <label for="renderDistanceSlider">描画距離</label>
+            <div id="renderDistanceControl">
+              <input id="renderDistanceSlider" aria-label="描画距離" type="range" min="5" max="121" step="1" value="12" disabled>
+              <output id="renderDistanceValue" for="renderDistanceSlider">12</output>
+            </div>
+          </div>
+        </div>
         <div class="viewer-footer">
-          <span class="dimension-control">ディメンション：<select id="dimensionSelect" disabled aria-label="ディメンション選択"><option value="0">読み込み前</option></select> <span id="dimensionLabel">—</span></span>
+          <span>MCWorld 3D Viewer</span>
           <span>3D Preview</span>
         </div>
       </section>
