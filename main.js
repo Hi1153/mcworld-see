@@ -540,14 +540,24 @@ function setupRenderDistanceControl() {
 
   const panel = document.createElement('div');
   panel.id = 'renderDistanceControl';
-  panel.style.cssText = 'position:relative;z-index:20;display:block;box-sizing:border-box;width:max-content;max-width: min(230px, 62%);flex:0 0 auto;padding:6px 9px;margin:0 0 6px auto;border:1px solid #e1e5eb;border-radius:10px;background:#fff;color:#20242c;font:11px/1.3 system-ui,-apple-system,sans-serif;visibility:visible;opacity:1;box-shadow:0 1px 3px rgba(20,30,40,.06);';
-  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px"><label for="renderDistanceSlider" style="font-weight:600">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12チャンク</output></div><input id="renderDistanceSlider" aria-label="描画距離" type="range" min="5" max="121" step="1" value="12" style="appearance:auto;-webkit-appearance:slider-horizontal;display:block;box-sizing:border-box;width:100%;height:18px;margin:0;padding:0;accent-color:#27865b;touch-action:pan-y;cursor:pointer">';
+  panel.style.cssText = 'position:relative;z-index:20;display:block;box-sizing:border-box;width:clamp(115px, 23vw, 165px);max-width:48%;flex:0 1 auto;padding:4px 7px;margin:0;border:1px solid #e1e5eb;border-radius:9px;background:#fff;color:#20242c;font:10px/1.25 system-ui,-apple-system,sans-serif;visibility:visible;opacity:1;box-shadow:0 1px 3px rgba(20,30,40,.06);';
+  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:1px"><label for="renderDistanceSlider" style="font-weight:600;white-space:nowrap">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12</output></div><input id="renderDistanceSlider" aria-label="描画距離" type="range" min="5" max="121" step="1" value="12" style="appearance:auto;-webkit-appearance:slider-horizontal;display:block;box-sizing:border-box;width:100%;height:14px;margin:0;padding:0;accent-color:#27865b;touch-action:pan-y;cursor:pointer">';
 
-  // Keep the control outside the viewport/canvas wrapper so overflow styles cannot hide it.
+  // Place the compact control in the bottom information row, beside the dimension selector.
+  const dimensionSelect = document.getElementById('dimensionSelect');
+  const infoRow = dimensionSelect && dimensionSelect.parentElement;
   const viewerPanel = viewport.closest('.viewer-panel');
-  if (viewerPanel) viewerPanel.insertBefore(panel, viewport.parentElement || viewport);
-  else if (viewport.parentElement) viewport.parentElement.insertBefore(panel, viewport);
-  else return;
+  if (infoRow) {
+    infoRow.style.display = 'flex';
+    infoRow.style.alignItems = 'center';
+    infoRow.style.flexWrap = 'wrap';
+    infoRow.style.gap = '8px';
+    infoRow.appendChild(panel);
+  } else if (viewerPanel) {
+    viewerPanel.insertBefore(panel, viewport.parentElement || viewport);
+  } else if (viewport.parentElement) {
+    viewport.parentElement.insertBefore(panel, viewport);
+  } else return;
 
   const slider = panel.querySelector('#renderDistanceSlider');
   const output = panel.querySelector('#renderDistanceValue');
