@@ -553,6 +553,90 @@ function setupRenderDistanceControl() {
   });
   updateLabel();
 }
+async function build() {
+  rebase();
+  const tok = ++btok, { y0, y1 } = W, unlimited = renderDistance === 0, R = unlimited ? 0 : renderDistance;
+  const cx = Math.floor((T[0] + W.ox) / 16), cz = Math.floor((T[2] + W.oz) / 16), cy = Math.floor(T[1] / 16);
+  bc = [cx, cz, cy];
+
+  if (W.raw > LIM.raw) {
+    if (!unlimited) {
+      const lim = (R + 4) * (R + 4);
+      for (const o of W.M.values()) if (o.r && o.v) { const dx = o.x - cx, dz = o.z - cz; if (dx * dx + dz * dz > lim) { o.v = null; W.raw--; } }
+    }
+    W.S.clear();
+  } else if (W.S.size > LIM.S) W.S.clear();
+
+  const MC = W.MC, MAXF = 7e6; let total = 0; const list = [], todo = [];
+  msg('描画準備中…');
+
+  let cl;
+  if (unlimited) {
+    cl = [];
+    for (const columnKey of W.cols) {
+      const [scx, scz] = unckey(columnKey), dx = scx - cx, dz = scz - cz;
+      cl.push([dx * dx + dz * dz, dx, dz]);
+    }
+    cl.sort((a, b) => a[0] - b[0]);
+  } else {
+    cl = CLC.get(R);
+    if (!cl) {
+      cl = []; for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) { const d = dx * dx + dz * dz; if (d <= R * R) cl.push([d, dx, dz]); }
+      cl.sort((p, q) => p[0] - q[0]); if (CLC.size > 3) CLC.clear(); CLC.set(R, cl);
+    }
+  }
+  const sa = y0, sb = y1; // Vertical chunk range is always unlimited; render distance only limits X/Z.
+
+  for (const [, dx, dz] of cl) {
+    const scx = cx + dx, scz = cz + dz; if (!unlimited && !W.cols.has(ckey(scx, scz))) continue;
+    for (let sy = sa; sy <= sb; sy++) {
+      const k = key(scx, sy, scz), m = MC.get(k);
+      if (m === undefined) todo.push([scx, sy, scz, k]);
+      else if (m.no || m.nt) { list.push(m); total += m.no + m.nt; }
+    }
+    if (!unlimited && total > MAXF) break;
+  }
+
+  let lu = 0, gap = 300;
+  const flush = () => {
+    const t0 = performance.now(); upload(list); draw(); lu = performance.now(); gap = Math.max(300, (lu - t0) * 4);
+    updateUIStats(list.length, total);
+  };
+  if (todo.length) flush();
+
+  let ready = 0, win = 300;
+  for (let j = 0; j < todo.length; j++) {
+    if (!unlimited && total > MAXF) break;
+    if (j >= ready) {
+      const end = Math.min(todo.length, ready + win), need = [], seen = new Set();
+      for (let q = ready; q < end; q++) {
+        const [sx, sy, sz] = todo[q];
+        for (let ex = -1; ex <= 1; ex++) for (let ez = -1; ez <= 1; ez++) {
+          if (!W.cols.has(ckey(sx + ex, sz + ez))) continue;
+          for (let ey = -1; ey <= 1; ey++) {
+            const o = W.M.get(key(sx + ex, sy + ey, sz + ez));
+            if (o && o.t && !o.v && o.r && !seen.has(o)) { seen.add(o); need.push(o); }
+          }
+        }
+      }
+      win = Math.min(win * 2, LIM.win); ready = end;
+      if (need.length) { msg(`読み込み中… ${j.toLocaleString()}/${todo.length.toLocaleString()}`); if (!await fetchRaw(need, tok)) return; }
+    }
+    const [scx, sy, scz, k] = todo[j], bb = getS(scx, sy, scz), m = bb ? meshSub(scx, sy, scz, bb) : EMPTY;
+    MC.set(k, m); W.mcF += m.no + m.nt;
+    if (m.no || m.nt) { list.push(m); total += m.no + m.nt; }
+    if ((j & 15) == 15) {
+      msg(`描画中… ${(j + 1).toLocaleString()}/${todo.length.toLocaleString()}`);
+      await tick(); if (tok != btok) return; if (performance.now() - lu > gap) flush();
+    }
+  }
+  flush();
+
+  // Keep the mesh cache so chunks already processed can be reused when revisited.
+  updateUIStats(list.length, total);
+  showLoading(false);
+  msg(total ? '読み込み完了' : 'この範囲に描画できるブロックがありません');
+}
 
 function maybe() {
   if (!W || renderDistance === 0) return; const R = renderDistance, t = Math.max(2, Math.min(R >> 2, 6)), cx = Math.floor((T[0] + W.ox) / 16), cz = Math.floor((T[2] + W.oz) / 16), cy = Math.floor(T[1] / 16);
@@ -736,7 +820,6 @@ async function loadWorld(f) {
     if (!av.length) throw Error('ブロックを復元できませんでした');
 
     W = { Ms, M: null, z, fl, fc, fcb, bc: new Map(), bcb: 0, sx, sz };
-    if (distanceSlider) distanceSlider.disabled = false;
 
     const ds = document.getElementById('dimensionSelect');
     if (ds) {
@@ -756,6 +839,7 @@ async function loadWorld(f) {
 
     initWebGLCanvas();
     await setDimension(av[0]);
+    if (distanceSlider) distanceSlider.disabled = false;
   } catch (e) {
     console.error(e);
     showLoading(false);
