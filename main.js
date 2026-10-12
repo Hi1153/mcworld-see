@@ -540,18 +540,25 @@ function setupRenderDistanceControl() {
 
   const panel = document.createElement('div');
   panel.id = 'renderDistanceControl';
-  panel.style.cssText = 'position:relative;z-index:20;display:block;box-sizing:border-box;width:clamp(115px, 23vw, 165px);max-width:48%;flex:0 1 auto;padding:4px 7px;margin:0;border:1px solid #e1e5eb;border-radius:9px;background:#fff;color:#20242c;font:10px/1.25 system-ui,-apple-system,sans-serif;visibility:visible;opacity:1;box-shadow:0 1px 3px rgba(20,30,40,.06);';
-  panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:1px"><label for="renderDistanceSlider" style="font-weight:600;white-space:nowrap">描画距離</label><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:700;white-space:nowrap">12</output></div><input id="renderDistanceSlider" aria-label="描画距離" type="range" min="5" max="121" step="1" value="12" style="appearance:auto;-webkit-appearance:slider-horizontal;display:block;box-sizing:border-box;width:100%;height:14px;margin:0;padding:0;accent-color:#27865b;touch-action:pan-y;cursor:pointer">';
+  panel.style.cssText = 'display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;box-sizing:border-box;width:auto;max-width:100%;flex:0 1 auto;padding:0;margin:0;border:0;border-radius:0;background:transparent;color:#737b87;font:12px/1.3 system-ui,-apple-system,sans-serif;box-shadow:none;';
+  panel.innerHTML = '<label for="renderDistanceSlider" style="font-weight:500;white-space:nowrap">チャンク:</label><input id="renderDistanceSlider" aria-label="描画チャンク数" type="range" min="5" max="121" step="1" value="12" style="appearance:auto;-webkit-appearance:slider-horizontal;display:block;box-sizing:border-box;width:clamp(72px, 20vw, 115px);height:16px;margin:0;padding:0;accent-color:#27865b;touch-action:pan-y;cursor:pointer"><output id="renderDistanceValue" for="renderDistanceSlider" style="font-weight:600;white-space:nowrap;min-width:42px;text-align:right">12</output>';
 
-  // Place the compact control in the bottom information row, beside the dimension selector.
   const dimensionSelect = document.getElementById('dimensionSelect');
   const infoRow = dimensionSelect && dimensionSelect.parentElement;
   const viewerPanel = viewport.closest('.viewer-panel');
+  let previewLabel = null;
   if (infoRow) {
-    infoRow.style.display = 'flex';
-    infoRow.style.alignItems = 'center';
-    infoRow.style.flexWrap = 'wrap';
-    infoRow.style.gap = '8px';
+    const candidates = infoRow.querySelectorAll('*');
+    for (const el of candidates) {
+      if (el.children.length === 0 && el.textContent.trim() === '3D Preview') {
+        previewLabel = el;
+        break;
+      }
+    }
+  }
+  if (previewLabel) {
+    previewLabel.replaceWith(panel);
+  } else if (infoRow) {
     infoRow.appendChild(panel);
   } else if (viewerPanel) {
     viewerPanel.insertBefore(panel, viewport.parentElement || viewport);
@@ -564,7 +571,8 @@ function setupRenderDistanceControl() {
   const updateLabel = () => {
     const value = Number(slider.value);
     renderDistance = value === 121 ? 0 : value;
-    output.textContent = renderDistance === 0 ? '無制限' : `${renderDistance}チャンク`;
+    output.textContent = renderDistance === 0 ? '∞' : String(renderDistance);
+    output.title = renderDistance === 0 ? '無制限' : `${renderDistance}チャンク`;
   };
   slider.addEventListener('input', updateLabel);
   slider.addEventListener('change', () => {
@@ -576,7 +584,6 @@ function setupRenderDistanceControl() {
   });
   updateLabel();
 }
-
 async function build() {
   rebase();
   const tok = ++btok, { y0, y1 } = W, unlimited = renderDistance === 0, R = unlimited ? 0 : renderDistance;
